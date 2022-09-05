@@ -1,0 +1,242 @@
+import pygame
+from pygame.locals import *
+from tkinter import *
+from tkinter import ttk
+from tkinter import messagebox
+from math import sqrt
+import sys
+
+sys.setrecursionlimit(1000000)
+
+red = (255, 0, 0)
+green = (0, 255, 0)
+blue = (0, 0, 255)
+grey = (220, 220, 220)
+black = (0, 0, 0)
+white = (255, 255, 255)
+LEN = 800 
+WID = 800
+BLOCKSIZE = 20
+COLS = LEN // BLOCKSIZE
+ROWS = WID // BLOCKSIZE
+WEIGHT = 1 # function = g + WEIGHTh
+MANHATTAN = False
+EUCLIDEAN = True
+
+class tile():
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.val = 0
+        self.g = float("inf")
+        self.h = float("inf")
+        self.f = float("inf")
+        self.next = None
+        self.neighbors = []
+
+    def colorTile(self, color):
+        rect = pygame.Rect(self.x, self.y, BLOCKSIZE, BLOCKSIZE)
+        pygame.draw.rect(screen, color, rect)
+        pygame.display.update()
+
+class tiles(): #Priority queue system
+    def __init__(self):
+        self.head = None
+        self.array = [[1] * COLS for i in range(ROWS)]
+        self.length = float("inf")
+        self.startTile = None
+        self.endTile = None
+
+    def addNeighbors(self):
+        directions = [[0, 1], [-1, 0], [0, -1], [1, 0]]
+        for r0, row in enumerate(self.array):
+            for c0, tile in enumerate(row):
+                if tile.val == 0:
+                    for dr, dc in directions:
+                        c = c0 + dc
+                        r = r0 + dr
+                        if 0 <= r < ROWS and 0 <= c < COLS:
+                            new_tile = self.array[r][c]
+                            if new_tile.val == 0:
+                                tile.neighbors.append(new_tile)
+
+    def getHeuristic(self):
+        for r, row in enumerate(self.array):
+            for c in range(len(row)):
+                if MANHATTAN:
+                    delx = abs(self.endTile.x // BLOCKSIZE - c)
+                    dely = abs(self.endTile.y // BLOCKSIZE - r)
+                    tile = self.array[r][c]
+                    tile.h = WEIGHT * (delx + dely)
+                elif EUCLIDEAN:
+                    delx = (self.endTile.x // BLOCKSIZE - c) ** 2
+                    dely = (self.endTile.y // BLOCKSIZE - r) ** 2
+                    tile = self.array[r][c]
+                    tile.h = WEIGHT * sqrt(delx + dely)
+                else:
+                    tile = self.array[r][c]
+                    tile.h = 0
+
+    def appendPQueue(self, tile): #Priority queue using heuristic and cost
+        f0 = tile.f
+
+        curr = self.head
+        if not curr:
+            self.head = tile
+            return
+
+        while curr:
+            next = curr.next
+            f = curr.f
+            if not next:
+                if f0 < f:
+                    curr.next = tile
+                    return
+                else:
+                    self.head = tile
+                    tile.next = curr
+                    return
+            else:
+                if f0 < f:
+                    if next.f <= f0:
+                        curr.next = tile
+                        tile.next = next
+                        return
+                    else:
+                        curr = next
+                else:
+                    self.head = tile
+                    tile.next = curr
+                    return
+
+    def removePQueue(self, tile): #Removes tile from queue if it is already in the queue
+        curr = self.head
+        if not curr or not curr.next:
+            self.appendPQueue(tile)
+            return
+
+        while curr:
+            if curr.next == tile:
+                curr.next = curr.next.next
+                tile.next = None
+                self.appendPQueue(tile)
+                return
+            curr = curr.next
+        self.appendPQueue(tile)
+
+    def mousePress(self, coord):
+        x, y = coord
+        tile = self.array[y // BLOCKSIZE][x // BLOCKSIZE]
+        val = tile.val
+        if not self.startTile:
+            self.startTile = tile
+            tile.colorTile(blue)
+        elif not self.endTile and tile != self.startTile:
+            self.endTile = tile
+            tile.colorTile(blue)
+        elif val == 0 and tile != self.startTile and tile != self.endTile:
+            tile.val = 1
+            tile.colorTile(red)
+
+    def findPath(self):
+        def dfs():
+            tile = tiles.popPQueue()
+            if tile == None:
+                return
+            for neighbor in tile.neighbors:
+                if neighbor == self.endTile:
+                    aPath[neighbor] = tile
+                    self.length = tile.g + 1
+                    return
+                temp_g = tile.g + 1
+                temp_f = temp_g + neighbor.h
+                if neighbor != start:
+                    neighbor.colorTile(green)
+                if temp_g < neighbor.g:
+                    neighbor.g = temp_g
+                    neighbor.f = temp_f
+                    aPath[neighbor] = tile
+                    tiles.removePQueue(neighbor)
+            dfs()
+
+        start = self.startTile
+        self.getHeuristic()
+        aPath = {}
+
+        start.g = 0
+        start.f = start.h
+        self.appendPQueue(start)
+        dfs()
+
+        if self.length != float("inf"):
+            curr = self.endTile
+            for i in range(self.length):
+                curr.colorTile(grey)
+                curr = aPath[curr]
+            print("The shortest length is " + str(self.length))
+        else:
+            print("This maze is unsolvable!")
+
+    def pathFind(self):
+        loop = True
+        quit_val = False
+        while loop:
+            ev = pygame.event.get()
+
+            for event in ev:
+                if event.type == pygame.QUIT:
+                    quit_val = True
+                    loop = False
+                if pygame.mouse.get_pressed()[0]:
+                    try:
+                        pos = pygame.mouse.get_pos()
+                        self.mousePress(pos)
+                    except AttributeError:
+                        pass
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE and self.startTile and self.endTile:
+                        loop = False
+
+        if not quit_val:
+            tiles.addNeighbors()
+            self.findPath()
+
+            loop = True
+            while loop:
+                ev = pygame.event.get()
+                for event in ev:
+                    if event.type == pygame.QUIT:
+                        loop = False
+        pygame.quit()
+
+    def popPQueue(self):
+        curr = self.head
+        if not curr:
+            return None
+        if not curr.next:
+            self.head = None
+            return curr
+
+        prev = curr
+        curr = curr.next
+        while curr:
+            next = curr.next
+            if not next:
+                prev.next = None
+                return curr
+            prev = curr
+            curr = next
+
+screen = pygame.display.set_mode((LEN, WID))
+screen.fill(black)
+pygame.init()
+
+tiles = tiles()
+for x in range(0, LEN, BLOCKSIZE):
+    for y in range(0, WID, BLOCKSIZE):
+        curr = tile(x, y)
+        tiles.array[y // BLOCKSIZE][x // BLOCKSIZE] = curr
+
+tiles.pathFind()
+
+
